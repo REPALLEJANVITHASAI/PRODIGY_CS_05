@@ -1,50 +1,83 @@
-from PIL import Image
+import subprocess
+from scapy.all import *
+import datetime
 
+def capture_packets(interface, count=10):
+    pcap_file = "captured_packets.pcap"
+    cmd = f"sudo tcpdump -i {interface} -c {count} -w {pcap_file}"
+    try:
+        subprocess.run(cmd, shell=True, check=True)
+        return pcap_file
+    except subprocess.CalledProcessError:
+        print("Error capturing packets.")
 
-def encode_message(image_path, message, output_path):
-    img = Image.open(image_path)
-    encoded = img.copy()
-    width, height = img.size
-    index = 0
+def analyze_packets(pcap_file, filter_option):
+    analysis_result = {
+        "ip_addresses": [],
+        "protocols": [],
+        "payload_data": []
+    }
+    
+    try:
+        packets = rdpcap(pcap_file)
+        for packet in packets:
+            if filter_option == "1":
+                if IP in packet:
+                    analysis_result["ip_addresses"].append((packet[IP].src, packet[IP].dst))
+            elif filter_option == "2":
+                if IP in packet:
+                    analysis_result["protocols"].append(packet[IP].proto)
+            elif filter_option == "3":
+                if Raw in packet:
+                    analysis_result["payload_data"].append(packet[Raw].load.decode("utf-8", "ignore"))
+        
+        return analysis_result
+    except FileNotFoundError:
+        print(f"Error: '{pcap_file}' not found.")
 
-    message += "$t3g0"
+def generate_text_report(captured_packets, analysis_result):
+    report = f"*** Packet Sniffer Tool Report ***\n\n"
+    report += f"Date and Time of Capture: {datetime.datetime.now()}\n"
+    report += f"Interface Used: {captured_packets['interface']}\n"
+    report += f"Number of Packets Captured: {captured_packets['count']}\n\n"
+    
+    report += "*** Captured Packets Analysis ***\n\n"
+    
+    report += "1. IP Addresses Analysis:\n"
+    for src_ip, dst_ip in analysis_result["ip_addresses"]:
+        report += f"- Source IP: {src_ip}, Destination IP: {dst_ip}\n"
+    report += "\n"
+    
+    report += "2. Protocols Analysis:\n"
+    for proto in analysis_result["protocols"]:
+        report += f"- Protocol: {proto}\n"
+    report += "\n"
+    
+    report += "3. Payload Data Analysis:\n"
+    for payload_data in analysis_result["payload_data"]:
+        report += f"- Payload Data: {payload_data}\n"
+    report += "\n"
+    
+    return report
 
-    for row in range(height):
-        for col in range(width):
-            r, g, b = img.getpixel((col, row))
-            if index < len(message):
-                char = message[index]
-                encoded.putpixel((col, row), (ord(char), g, b))
-                index += 1
-            else:
-                encoded.putpixel((col, row), (r, g, b))
+def main():
+    interface = "eth0"
+    count = 10
+    pcap_file = capture_packets(interface, count)
+    
+    while True:
+        filter_option = input("Select analysis option:\n"
+                              "1. IP Addresses\n"
+                              "2. Protocols\n"
+                              "3. Payload Data\n"
+                              "4. Exit analysis\n"
+                              "Please enter your choice (1, 2, 3, or 4): ")
+        if filter_option == "4":
+            break
+        
+        analysis_result = analyze_packets(pcap_file, filter_option)
+        report = generate_text_report({'interface': interface, 'count': count}, analysis_result)
+        print(report)
 
-    encoded.save(output_path)
-    print("Message encoded and image saved.")
-
-
-def decode_message(image_path):
-    img = Image.open(image_path)
-    width, height = img.size
-    message = ""
-
-    for row in range(height):
-        for col in range(width):
-            r, g, b = img.getpixel((col, row))
-            if chr(r) == "$" and message[-4:] == "t3g0":
-                return message[:-4]
-            else:
-                message += chr(r)
-
-    return message
-
-
-image_path = input("Enter the path to the image: ")
-choice = input("Do you want to encode or decode a message? (e/d): ")
-
-if choice == 'e':
-    message = input("Enter the message to encode: ")
-    output_path = input("Enter the output image path: ")
-    encode_message(image_path, message, output_path)
-elif choice == 'd':
-    print("Decoded message:", decode_message(image_path))
+if __name__ == "__main__":
+    main()
